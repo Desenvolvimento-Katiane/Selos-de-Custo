@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Impressão de Selos</title>
+  <script src="xlsx.full.min.js"></script>
+  <style>
+    /* ── Reset ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Tela: upload ──────────────────────────────────────────── */
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f0f2f5;
+    }
+
+    #tela-upload {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.10);
+      padding: 2.5rem 2rem;
+      width: 100%;
+      max-width: 480px;
+      text-align: center;
+    }
+
+    h1 { font-size: 1.5rem; color: #222; margin-bottom: .4rem; }
+    .subtitulo { color: #666; font-size: .9rem; margin-bottom: 2rem; }
+
+    .upload-area {
+      border: 2px dashed #bbb;
+      border-radius: 8px;
+      padding: 2rem 1rem;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      margin-bottom: 1.5rem;
+      position: relative;
+    }
+    .upload-area:hover, .upload-area.drag-over {
+      border-color: #4a7fcb;
+      background: #f0f5ff;
+    }
+    .upload-area input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer;
+      width: 100%; height: 100%;
+    }
+    .upload-icone { font-size: 2.5rem; margin-bottom: .5rem; }
+    .upload-texto { color: #555; font-size: .95rem; }
+    .upload-texto strong { color: #4a7fcb; }
+    .nome-arquivo { margin-top: .75rem; font-size: .85rem; color: #333; font-weight: 600; }
+
+    .btn {
+      width: 100%;
+      padding: .8rem;
+      background: #4a7fcb;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    .btn:hover { background: #3568b5; }
+    .btn:disabled { background: #aac4e8; cursor: not-allowed; }
+
+    .alerta {
+      background: #fff0f0;
+      border: 1px solid #f5c2c2;
+      color: #c0392b;
+      border-radius: 6px;
+      padding: .75rem 1rem;
+      font-size: .9rem;
+      text-align: left;
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    /* ── Tela: impressão ────────────────────────────────────────── */
+    #tela-impressao { display: none; }
+
+    .controles {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,.1);
+      flex-wrap: wrap;
+    }
+    .btn-sm {
+      padding: .55rem 1.2rem;
+      border: none;
+      border-radius: 6px;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-imprimir { background: #4a7fcb; color: #fff; }
+    .btn-imprimir:hover { background: #3568b5; }
+    .btn-voltar { background: #fff; color: #333; border: 1px solid #ccc; }
+    .btn-voltar:hover { background: #f5f5f5; }
+    .info-total { font-size: .88rem; color: #555; }
+
+    /* Área de folhas na tela */
+    .area-folhas {
+      background: #888;
+      padding: 1.5rem;
+      min-height: calc(100vh - 60px);
+    }
+
+    /* ── Layout da folha (tela + impressão) ───────────────────── */
+    .pagina {
+      width: 21.6cm;
+      height: 27.9cm;
+      overflow: hidden;
+      background: #fff;
+
+      padding-top: 1.2cm;
+      padding-bottom: 0.8cm;
+      padding-left: 0.4cm;
+      padding-right: 0.5cm;
+
+      display: flex;
+      flex-direction: row;
+      align-items: flex-start;
+    }
+
+    @media screen {
+      .pagina {
+        box-shadow: 0 4px 20px rgba(0,0,0,.4);
+        margin: 0 auto 2rem;
+      }
+    }
+
+    /* ── Selo ──────────────────────────────────────────────────── */
+    .selo {
+      width: 6.7cm;
+      height: 2.55cm;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 0 0.25cm;
+      border: 0.5px dashed #ccc;
+    }
+
+    .selo-descer    { margin-top:  0.3cm; }
+    .selo-subir     { margin-top: -0.3cm; }
+    .m-01           { margin-top:  0.1cm; }
+    .m-02           { margin-top:  0.2cm; }
+
+    .col-selos {
+      width: 6.7cm;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .col-selos-1 { margin-left: 0; }
+    .col-selos-2 { margin-left: 0.9cm; } /* 0.3cm gap + 0.6cm deslocamento */
+    .col-selos-3 { margin-left: 0.3cm; }
+
+    .col-spacer { flex-shrink: 0; }
+
+    .selo-modelo {
+      font-size: 9pt;
+      font-weight: 400;
+      color: #111;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
+    .selo-preco {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0;
+    }
+
+    .selo-preco-label {
+      font-size: 9pt;
+      font-weight: 400;
+      color: #555;
+      white-space: nowrap;
+    }
+
+    .selo-preco-texto {
+      font-size: 32pt;
+      font-weight: 900;
+      color: #111;
+      line-height: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+
+    .selo-preco-texto.custo { color: #f97316; }
+
+    /* ── Impressão ─────────────────────────────────────────────── */
+    @page { size: 21.6cm 27.9cm; margin: 0; }
+
+    @media print {
+      #tela-upload { display: none !important; }
+      #tela-impressao { display: block !important; }
+      .controles { display: none; }
+      .area-folhas { background: #fff; padding: 0; }
+      .pagina {
+        box-shadow: none;
+        margin: 0;
+        page-break-after: always;
+      }
+      .pagina:last-child { page-break-after: avoid; }
+      .selo { border-color: transparent; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ────── TELA DE UPLOAD ────── -->
+<div id="tela-upload">
+  <div class="card">
+    <h1>Impressão de Selos</h1>
+    <p class="subtitulo">Gere a planilha no fluxogama no formato Excel sem imagens e sem mesclar e faça o upload</p>
+
+    <div class="alerta" id="alerta"></div>
+
+    <div class="upload-area" id="upload-area">
+      <input type="file" id="arquivo" accept=".xlsx,.xls">
+      <div class="upload-icone">📊</div>
+      <div class="upload-texto">
+        <strong>Clique para selecionar</strong> ou arraste o arquivo aqui<br>
+        <small>Formatos aceitos: .xlsx, .xls</small>
+      </div>
+      <div class="nome-arquivo" id="nome-arquivo"></div>
+    </div>
+
+    <button class="btn" id="btn-gerar" disabled onclick="gerarSelos()">Gerar Selos</button>
+  </div>
+</div>
+
+<!-- ────── TELA DE IMPRESSÃO ────── -->
+<div id="tela-impressao">
+  <div class="controles">
+    <button class="btn-sm btn-voltar" onclick="voltar()">← Voltar</button>
+    <button class="btn-sm btn-imprimir" onclick="window.print()">🖨️ Imprimir</button>
+    <span class="info-total" id="info-total"></span>
+  </div>
+  <div class="area-folhas" id="area-folhas"></div>
+</div>
+
+<script>
+  const SELOS_POR_PAGINA = 30;
+
+  // ── Upload e drag & drop ──────────────────────────────────────
+  const inputArquivo = document.getElementById('arquivo');
+  const nomeArquivoEl = document.getElementById('nome-arquivo');
+  const btnGerar = document.getElementById('btn-gerar');
+  const uploadArea = document.getElementById('upload-area');
+
+  inputArquivo.addEventListener('change', () => {
+    if (inputArquivo.files.length > 0) {
+      nomeArquivoEl.textContent = inputArquivo.files[0].name;
+      btnGerar.disabled = false;
+    }
+  });
+
+  uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+  uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+  uploadArea.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadArea.classList.remove('drag-over');
+    if (e.dataTransfer.files.length > 0) {
+      inputArquivo.files = e.dataTransfer.files;
+      nomeArquivoEl.textContent = e.dataTransfer.files[0].name;
+      btnGerar.disabled = false;
+    }
+  });
+
+  // ── Utilitários ───────────────────────────────────────────────
+  function mostrarErro(msg) {
+    const el = document.getElementById('alerta');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function formatarMoeda(valor) {
+    const n = parseFloat(valor);
+    if (isNaN(n)) return '';
+    return 'R$ ' + n.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  }
+
+  function normalizar(str) {
+    return String(str || '').toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  function encontrarColuna(colunas, variantes) {
+    for (const col of colunas) {
+      const n = normalizar(col);
+      if (variantes.some(v => n === v)) return col;
+    }
+    return null;
+  }
+
+  // ── Leitura do Excel e processamento ─────────────────────────
+  function gerarSelos() {
+    document.getElementById('alerta').style.display = 'none';
+    const arquivo = inputArquivo.files[0];
+    if (!arquivo) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const dados = new Uint8Array(e.target.result);
+        const wb = XLSX.read(dados, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const linhas = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        if (!linhas.length) { mostrarErro('A planilha está vazia.'); return; }
+
+        const colunas = Object.keys(linhas[0]);
+        const colModelo   = encontrarColuna(colunas, ['modelo']);
+        const colPreCusto = encontrarColuna(colunas, ['precusto', 'pre custo', 'preco', 'pre_custo']);
+        const colCusto    = encontrarColuna(colunas, ['custo']);
+
+        if (!colModelo) { mostrarErro("Coluna 'Modelo' não encontrada na planilha."); return; }
+        if (!colPreCusto && !colCusto) { mostrarErro("Nenhuma coluna de custo encontrada."); return; }
+
+        const selos = [];
+        for (const linha of linhas) {
+          const modelo = String(linha[colModelo] || '').trim();
+          if (!modelo) continue;
+
+          let precoLabel = '';
+          let precoValor = '';
+
+          const custoVal    = colCusto    ? parseFloat(linha[colCusto])    : NaN;
+          const preCustoVal = colPreCusto ? parseFloat(linha[colPreCusto]) : NaN;
+
+          if (!isNaN(custoVal) && custoVal > 0) {
+            precoLabel = 'Custo';
+            precoValor = formatarMoeda(custoVal);
+          } else if (!isNaN(preCustoVal) && preCustoVal > 0) {
+            precoLabel = 'Pré Custo';
+            precoValor = formatarMoeda(preCustoVal);
+          }
+
+          if (precoLabel) selos.push({ modelo, precoLabel, precoValor });
+        }
+
+        if (!selos.length) { mostrarErro('Nenhum modelo válido encontrado.'); return; }
+
+        renderizarSelos(selos);
+      } catch (err) {
+        mostrarErro('Erro ao processar o arquivo: ' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(arquivo);
+  }
+
+  // ── Renderização das folhas ───────────────────────────────────
+  function renderizarSelos(selos) {
+    const area = document.getElementById('area-folhas');
+    area.innerHTML = '';
+
+    const numPaginas = Math.ceil(selos.length / SELOS_POR_PAGINA);
+
+    for (let p = 0; p < numPaginas; p++) {
+      const pagina = document.createElement('div');
+      pagina.className = 'pagina';
+
+      const fatia = selos.slice(p * SELOS_POR_PAGINA, (p + 1) * SELOS_POR_PAGINA);
+
+      // 3 colunas independentes
+      for (let col = 0; col < 3; col++) {
+        const colDiv = document.createElement('div');
+        colDiv.className = 'col-selos col-selos-' + (col + 1);
+
+        const addSelo = (dataIdx, descer) => {
+          const el = dataIdx < fatia.length ? criarSelo(fatia[dataIdx]) : criarVazio();
+          if (descer) el.classList.add('selo-descer');
+          colDiv.appendChild(el);
+        };
+
+        const addSpacer = (altura) => {
+          const sp = document.createElement('div');
+          sp.className = 'col-spacer';
+          sp.style.height = altura;
+          colDiv.appendChild(sp);
+        };
+
+        // Linha 1 → descer
+        addSelo(col + 0, true);
+        // Linha 2 → normal
+        addSelo(col + 3, false);
+        // Espaçador 0.1cm
+        addSpacer('0.1cm');
+        // Linha 3 → normal
+        addSelo(col + 6, false);
+        // Linha 4 → normal
+        addSelo(col + 9, false);
+        // Espaçador 0.3cm
+        addSpacer('0.3cm');
+        // Linhas 5-10 → linha 5 sobe 0.3cm, linha 6 compensa
+        const classesPorLinha = { 4: 'selo-subir', 5: 'm-01', 8: 'm-02' };
+        for (let row = 4; row < 10; row++) {
+          const idx = col + row * 3;
+          const el = idx < fatia.length ? criarSelo(fatia[idx]) : criarVazio();
+          if (classesPorLinha[row]) el.classList.add(classesPorLinha[row]);
+          colDiv.appendChild(el);
+        }
+
+        pagina.appendChild(colDiv);
+      }
+
+      area.appendChild(pagina);
+    }
+
+    document.getElementById('info-total').textContent =
+      selos.length + ' selos em ' + numPaginas + ' página(s)';
+
+    document.getElementById('tela-upload').style.display = 'none';
+    document.getElementById('tela-impressao').style.display = 'block';
+  }
+
+  function criarSelo(s) {
+    const div = document.createElement('div');
+    div.className = 'selo';
+
+    const modelo = document.createElement('div');
+    modelo.className = 'selo-modelo';
+    modelo.textContent = s.modelo;
+    div.appendChild(modelo);
+
+    if (s.precoLabel) {
+      const preco = document.createElement('div');
+      preco.className = 'selo-preco';
+
+      const topo = document.createElement('div');
+      topo.className = 'selo-preco-topo';
+
+      const label = document.createElement('span');
+      label.className = 'selo-preco-label';
+      label.textContent = s.precoLabel + ':';
+      preco.appendChild(label);
+
+      const texto = document.createElement('span');
+      texto.className = 'selo-preco-texto' + (s.precoLabel === 'Custo' ? ' custo' : '');
+      texto.textContent = s.precoValor;
+      preco.appendChild(texto);
+
+      div.appendChild(preco);
+    }
+
+    return div;
+  }
+
+  function criarVazio() {
+    const div = document.createElement('div');
+    div.className = 'selo';
+    return div;
+  }
+
+  // ── Voltar para upload ────────────────────────────────────────
+  function voltar() {
+    document.getElementById('tela-impressao').style.display = 'none';
+    document.getElementById('tela-upload').style.display = 'flex';
+    document.getElementById('alerta').style.display = 'none';
+    inputArquivo.value = '';
+    nomeArquivoEl.textContent = '';
+    btnGerar.disabled = true;
+  }
+</script>
+</body>
+</html>
