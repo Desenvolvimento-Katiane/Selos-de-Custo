@@ -137,8 +137,20 @@
     @media screen {
       .pagina {
         box-shadow: 0 4px 20px rgba(0,0,0,.4);
-        margin: 0 auto 2rem;
+        margin: 0 auto 0;
       }
+    }
+
+    .pagina-label {
+      text-align: center;
+      font-size: .82rem;
+      color: #ccc;
+      padding: .4rem 0 1.8rem;
+      letter-spacing: .03em;
+    }
+
+    @media print {
+      .pagina-label { display: none; }
     }
 
     /* ── Selo ──────────────────────────────────────────────────── */
@@ -152,7 +164,31 @@
       justify-content: center;
       padding: 0 0.25cm;
       border: 0.5px dashed #ccc;
+      position: relative;
     }
+
+    .btn-deletar {
+      position: absolute;
+      top: 3px;
+      right: 3px;
+      width: 15px;
+      height: 15px;
+      border: none;
+      background: #e53e3e;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      line-height: 1;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .selo:hover .btn-deletar { opacity: 1; }
 
     .selo-descer    { margin-top:  0.3cm; }
     .selo-subir     { margin-top: -0.3cm; }
@@ -226,6 +262,7 @@
       }
       .pagina:last-child { page-break-after: avoid; }
       .selo { border-color: transparent; }
+      .btn-deletar { display: none !important; }
     }
   </style>
 </head>
@@ -265,6 +302,7 @@
 
 <script>
   const SELOS_POR_PAGINA = 30;
+  let selosAtivos = [];
 
   // ── Upload e drag & drop ──────────────────────────────────────
   const inputArquivo = document.getElementById('arquivo');
@@ -366,7 +404,8 @@
 
         if (!selos.length) { mostrarErro('Nenhum modelo válido encontrado.'); return; }
 
-        renderizarSelos(selos);
+        selosAtivos = selos;
+        renderizarSelos(selosAtivos);
       } catch (err) {
         mostrarErro('Erro ao processar o arquivo: ' + err.message);
       }
@@ -374,18 +413,49 @@
     reader.readAsArrayBuffer(arquivo);
   }
 
+  // ── Apagar selo: deixa em branco no lugar e manda para o início da última página ─
+  function deletarSelo(globalIdx) {
+    const removed = selosAtivos[globalIdx];
+    if (!removed) return;
+    selosAtivos[globalIdx] = null;
+    const numPag   = Math.ceil(selosAtivos.length / SELOS_POR_PAGINA) || 1;
+    const lastStart = (numPag - 1) * SELOS_POR_PAGINA;
+    selosAtivos.splice(lastStart, 0, removed);
+    renderizarSelos(selosAtivos);
+  }
+
   // ── Renderização das folhas ───────────────────────────────────
   function renderizarSelos(selos) {
     const area = document.getElementById('area-folhas');
     area.innerHTML = '';
 
-    const numPaginas = Math.ceil(selos.length / SELOS_POR_PAGINA);
+    const numPaginas = Math.ceil(selos.length / SELOS_POR_PAGINA) || 1;
 
     for (let p = 0; p < numPaginas; p++) {
       const pagina = document.createElement('div');
       pagina.className = 'pagina';
 
-      const fatia = selos.slice(p * SELOS_POR_PAGINA, (p + 1) * SELOS_POR_PAGINA);
+      const selosDaPagina = selos.slice(p * SELOS_POR_PAGINA, (p + 1) * SELOS_POR_PAGINA);
+      const isUltima = p === numPaginas - 1;
+
+      // Monta fatia e mapa de índices globais
+      let fatia, idxMap;
+      if (isUltima) {
+        // Última página: não-nulos ficam no início (topo)
+        const itens = [];
+        selosDaPagina.forEach((item, i) => {
+          if (item != null) itens.push({ item, gi: p * SELOS_POR_PAGINA + i });
+        });
+        const pad = SELOS_POR_PAGINA - itens.length;
+        fatia  = [...itens.map(x => x.item), ...Array(pad).fill(null)];
+        idxMap = [...itens.map(x => x.gi),   ...Array(pad).fill(-1)];
+      } else {
+        // Páginas anteriores: nulos ficam no lugar
+        fatia  = selosDaPagina;
+        idxMap = selosDaPagina.map((item, i) =>
+          item != null ? p * SELOS_POR_PAGINA + i : -1
+        );
+      }
 
       // 3 colunas independentes
       for (let col = 0; col < 3; col++) {
@@ -393,7 +463,9 @@
         colDiv.className = 'col-selos col-selos-' + (col + 1);
 
         const addSelo = (dataIdx, descer) => {
-          const el = dataIdx < fatia.length ? criarSelo(fatia[dataIdx]) : criarVazio();
+          const item = fatia[dataIdx];
+          const gi   = idxMap[dataIdx];
+          const el   = (item != null && gi >= 0) ? criarSelo(item, gi) : criarVazio();
           if (descer) el.classList.add('selo-descer');
           colDiv.appendChild(el);
         };
@@ -405,23 +477,18 @@
           colDiv.appendChild(sp);
         };
 
-        // Linha 1 → descer
         addSelo(col + 0, true);
-        // Linha 2 → normal
         addSelo(col + 3, false);
-        // Espaçador 0.1cm
         addSpacer('0.1cm');
-        // Linha 3 → normal
         addSelo(col + 6, false);
-        // Linha 4 → normal
         addSelo(col + 9, false);
-        // Espaçador 0.3cm
         addSpacer('0.3cm');
-        // Linhas 5-10 → linha 5 sobe 0.3cm, linha 6 compensa
         const classesPorLinha = { 4: 'selo-subir', 5: 'm-01', 8: 'm-02' };
         for (let row = 4; row < 10; row++) {
-          const idx = col + row * 3;
-          const el = idx < fatia.length ? criarSelo(fatia[idx]) : criarVazio();
+          const idx  = col + row * 3;
+          const item = fatia[idx];
+          const gi   = idxMap[idx];
+          const el   = (item != null && gi >= 0) ? criarSelo(item, gi) : criarVazio();
           if (classesPorLinha[row]) el.classList.add(classesPorLinha[row]);
           colDiv.appendChild(el);
         }
@@ -430,16 +497,22 @@
       }
 
       area.appendChild(pagina);
+
+      const label = document.createElement('div');
+      label.className = 'pagina-label';
+      label.textContent = 'Página ' + (p + 1) + ' de ' + numPaginas;
+      area.appendChild(label);
     }
 
+    const totalSelos = selos.filter(s => s != null).length;
     document.getElementById('info-total').textContent =
-      selos.length + ' selos em ' + numPaginas + ' página(s)';
+      totalSelos + ' selos em ' + numPaginas + ' página(s)';
 
     document.getElementById('tela-upload').style.display = 'none';
     document.getElementById('tela-impressao').style.display = 'block';
   }
 
-  function criarSelo(s) {
+  function criarSelo(s, globalIdx) {
     const div = document.createElement('div');
     div.className = 'selo';
 
@@ -467,6 +540,16 @@
 
       div.appendChild(preco);
     }
+
+    const btnDel = document.createElement('button');
+    btnDel.className = 'btn-deletar';
+    btnDel.textContent = '×';
+    btnDel.title = 'Remover selo';
+    btnDel.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deletarSelo(globalIdx);
+    });
+    div.appendChild(btnDel);
 
     return div;
   }
