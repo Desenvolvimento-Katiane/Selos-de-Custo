@@ -33,7 +33,31 @@
     }
 
     h1 { font-size: 1.5rem; color: #222; margin-bottom: .4rem; }
-    .subtitulo { color: #666; font-size: .9rem; margin-bottom: 2rem; }
+    .btn-instrucoes {
+      background: none;
+      border: 1px solid #4a7fcb;
+      color: #4a7fcb;
+      border-radius: 6px;
+      padding: .35rem .9rem;
+      font-size: .82rem;
+      cursor: pointer;
+      margin-bottom: 1.2rem;
+    }
+    .btn-instrucoes:hover { background: #f0f5ff; }
+
+    .instrucoes-painel {
+      display: none;
+      background: #f0f5ff;
+      border: 1px solid #c3d9f5;
+      border-radius: 8px;
+      padding: .9rem 1rem;
+      font-size: .88rem;
+      color: #333;
+      text-align: left;
+      margin-bottom: 1.2rem;
+      line-height: 1.6;
+    }
+    .instrucoes-painel ul { padding-left: 1.2rem; margin: .3rem 0; }
 
     .upload-area {
       border: 2px dashed #bbb;
@@ -272,7 +296,16 @@
 <div id="tela-upload">
   <div class="card">
     <h1>Impressão de Selos de Custo</h1>
-    <p class="subtitulo">Gere a planilha no fluxogama no formato Excel sem imagens e sem mesclar e faça o upload</p>
+    <button class="btn-instrucoes" onclick="toggleInstrucoes()">Instruções</button>
+    <div class="instrucoes-painel" id="instrucoes-painel">
+      <p>Entre no Fluxogama e, na Gerencial, abra a visão: <strong>CUSTO - REUNIÃO COMERCIAL</strong>.</p>
+      <p>Em seguida:</p>
+      <ul>
+        <li>filtre pela marca desejada;</li>
+        <li>gere a planilha em: <strong>Excel sem imagens e sem mesclar</strong></li>
+      </ul>
+      <p>Após salvar o arquivo, faça o upload no sistema.</p>
+    </div>
 
     <div class="alerta" id="alerta"></div>
 
@@ -301,6 +334,11 @@
 </div>
 
 <script>
+  function toggleInstrucoes() {
+    const p = document.getElementById('instrucoes-painel');
+    p.style.display = p.style.display === 'block' ? 'none' : 'block';
+  }
+
   const SELOS_POR_PAGINA = 30;
   let selosAtivos = [];
 
