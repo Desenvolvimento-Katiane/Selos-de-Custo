@@ -34,16 +34,23 @@
 
     h1 { font-size: 1.5rem; color: #222; margin-bottom: .4rem; }
     .btn-instrucoes {
-      background: none;
-      border: 1px solid #4a7fcb;
-      color: #4a7fcb;
-      border-radius: 6px;
-      padding: .35rem .9rem;
-      font-size: .82rem;
+      background: #4a7fcb;
+      border: none;
+      color: #fff;
+      border-radius: 8px;
+      padding: .55rem 1.4rem;
+      font-size: .95rem;
+      font-weight: 600;
       cursor: pointer;
-      margin-bottom: 1.2rem;
+      margin-bottom: 1.4rem;
+      letter-spacing: .02em;
+      box-shadow: 0 2px 6px rgba(74,127,203,.35);
+      transition: background .2s, box-shadow .2s;
     }
-    .btn-instrucoes:hover { background: #f0f5ff; }
+    .btn-instrucoes:hover {
+      background: #3568b5;
+      box-shadow: 0 4px 10px rgba(74,127,203,.45);
+    }
 
     .instrucoes-painel {
       display: none;
@@ -173,8 +180,19 @@
       letter-spacing: .03em;
     }
 
+    .obs-impressao {
+      text-align: center;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #c0392b;
+      padding: .5rem 1rem .3rem;
+      letter-spacing: .02em;
+      text-shadow: 0 1px 2px rgba(0,0,0,.15);
+    }
+
     @media print {
       .pagina-label { display: none; }
+      .obs-impressao { display: none; }
     }
 
     /* ── Selo ──────────────────────────────────────────────────── */
@@ -287,7 +305,77 @@
       .pagina:last-child { page-break-after: avoid; }
       .selo { border-color: transparent; }
       .btn-deletar { display: none !important; }
+      .menu-deletar { display: none !important; }
+      .selo-chk { display: none !important; }
     }
+
+    .menu-deletar {
+      position: fixed;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.18);
+      z-index: 1000;
+      display: none;
+      min-width: 220px;
+      overflow: hidden;
+    }
+    .menu-deletar button {
+      display: block;
+      width: 100%;
+      padding: .65rem 1rem;
+      border: none;
+      background: none;
+      text-align: left;
+      cursor: pointer;
+      font-size: .88rem;
+      color: #333;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .menu-deletar button:last-child { border-bottom: none; }
+    .menu-deletar button:hover { background: #f5f5f5; }
+
+    .selo-chk {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 15px;
+      height: 15px;
+      border: 1.5px solid #bbb;
+      border-radius: 50%;
+      background: #fff;
+      font-size: 9px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity .15s, background .15s, border-color .15s;
+      z-index: 2;
+    }
+    .selo:hover .selo-chk { opacity: 1; }
+    .selo.selecionado .selo-chk {
+      opacity: 1;
+      background: #4a7fcb;
+      border-color: #4a7fcb;
+    }
+    .selo.selecionado {
+      border-color: #4a7fcb !important;
+      background: rgba(74,127,203,.07);
+    }
+    .btn-excluir-sel {
+      background: #e53e3e;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: .55rem 1.2rem;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: none;
+    }
+    .btn-excluir-sel:hover { background: #c53030; }
   </style>
 </head>
 <body>
@@ -298,8 +386,8 @@
     <h1>Impressão de Selos de Custo</h1>
     <button class="btn-instrucoes" onclick="toggleInstrucoes()">Instruções</button>
     <div class="instrucoes-painel" id="instrucoes-painel">
-      <p>Entre no Fluxogama e, na Gerencial, abra a visão: <strong>CUSTO - REUNIÃO COMERCIAL</strong>.</p>
-      <p>Em seguida:</p>
+      <p>Entre no Fluxogama e, na Gerencial, abra a visão:<br><strong>CUSTO - REUNIÃO COMERCIAL</strong></p>
+      <p style="margin-top: .6rem;">Em seguida:</p>
       <ul>
         <li>filtre pela marca desejada;</li>
         <li>gere a planilha em: <strong>Excel sem imagens e sem mesclar</strong></li>
@@ -328,6 +416,7 @@
   <div class="controles">
     <button class="btn-sm btn-voltar" onclick="voltar()">← Voltar</button>
     <button class="btn-sm btn-imprimir" onclick="window.print()">🖨️ Imprimir</button>
+    <button class="btn-excluir-sel" id="btn-excluir-sel" onclick="abrirMenuExcluirSel(event)">Excluir selecionados (0)</button>
     <span class="info-total" id="info-total"></span>
   </div>
   <div class="area-folhas" id="area-folhas"></div>
@@ -341,6 +430,60 @@
 
   const SELOS_POR_PAGINA = 30;
   let selosAtivos = [];
+  const selecionados = new Set();
+  let lastClickedVisualPos = -1;
+
+  function toggleSelecao(globalIdx, div) {
+    if (selecionados.has(globalIdx)) {
+      selecionados.delete(globalIdx);
+      div.classList.remove('selecionado');
+    } else {
+      selecionados.add(globalIdx);
+      div.classList.add('selecionado');
+    }
+    atualizarBtnSel();
+  }
+
+  function handleSeloClick(e, globalIdx, visualPos, div) {
+    if (e.ctrlKey && lastClickedVisualPos >= 0) {
+      // Seleciona o intervalo entre o último clique e este
+      const minPos = Math.min(lastClickedVisualPos, visualPos);
+      const maxPos = Math.max(lastClickedVisualPos, visualPos);
+      document.querySelectorAll('.selo[data-vpos]').forEach(el => {
+        const pos = parseInt(el.dataset.vpos);
+        if (pos >= minPos && pos <= maxPos) {
+          const gi = parseInt(el.dataset.gi);
+          selecionados.add(gi);
+          el.classList.add('selecionado');
+        }
+      });
+    } else {
+      toggleSelecao(globalIdx, div);
+    }
+    lastClickedVisualPos = visualPos;
+    atualizarBtnSel();
+  }
+
+  function atualizarBtnSel() {
+    const btn = document.getElementById('btn-excluir-sel');
+    if (!btn) return;
+    if (selecionados.size > 0) {
+      btn.style.display = 'inline-block';
+      btn.textContent = 'Excluir selecionados (' + selecionados.size + ')';
+    } else {
+      btn.style.display = 'none';
+    }
+  }
+
+  function abrirMenuExcluirSel(e) {
+    e.stopPropagation();
+    _idxPendente = -2;
+    const menu = document.getElementById('menu-deletar');
+    menu.style.display = 'block';
+    const rect = e.target.getBoundingClientRect();
+    menu.style.top  = (rect.bottom + 6) + 'px';
+    menu.style.left = Math.min(rect.left, window.innerWidth - 230) + 'px';
+  }
 
   // ── Upload e drag & drop ──────────────────────────────────────
   const inputArquivo = document.getElementById('arquivo');
@@ -503,7 +646,8 @@
         const addSelo = (dataIdx, descer) => {
           const item = fatia[dataIdx];
           const gi   = idxMap[dataIdx];
-          const el   = (item != null && gi >= 0) ? criarSelo(item, gi) : criarVazio();
+          const vpos = p * SELOS_POR_PAGINA + dataIdx;
+          const el   = (item != null && gi >= 0) ? criarSelo(item, gi, vpos) : criarVazio();
           if (descer) el.classList.add('selo-descer');
           colDiv.appendChild(el);
         };
@@ -526,7 +670,8 @@
           const idx  = col + row * 3;
           const item = fatia[idx];
           const gi   = idxMap[idx];
-          const el   = (item != null && gi >= 0) ? criarSelo(item, gi) : criarVazio();
+          const vpos = p * SELOS_POR_PAGINA + idx;
+          const el   = (item != null && gi >= 0) ? criarSelo(item, gi, vpos) : criarVazio();
           if (classesPorLinha[row]) el.classList.add(classesPorLinha[row]);
           colDiv.appendChild(el);
         }
@@ -536,11 +681,20 @@
 
       area.appendChild(pagina);
 
+      const obs = document.createElement('div');
+      obs.className = 'obs-impressao';
+      obs.textContent = 'Impressão: Os selos devem ficar virados para cima. Esse lado deve ficar virado para você ao colocar a folha na impressora.';
+      area.appendChild(obs);
+
       const label = document.createElement('div');
       label.className = 'pagina-label';
       label.textContent = 'Página ' + (p + 1) + ' de ' + numPaginas;
       area.appendChild(label);
     }
+
+    selecionados.clear();
+    lastClickedVisualPos = -1;
+    atualizarBtnSel();
 
     const totalSelos = selos.filter(s => s != null).length;
     document.getElementById('info-total').textContent =
@@ -550,9 +704,20 @@
     document.getElementById('tela-impressao').style.display = 'block';
   }
 
-  function criarSelo(s, globalIdx) {
+  function criarSelo(s, globalIdx, visualPos) {
     const div = document.createElement('div');
     div.className = 'selo';
+    div.dataset.vpos = visualPos;
+    div.dataset.gi   = globalIdx;
+    if (selecionados.has(globalIdx)) div.classList.add('selecionado');
+
+    const chk = document.createElement('div');
+    chk.className = 'selo-chk';
+    chk.textContent = '✓';
+    chk.addEventListener('click', (e) => { e.stopPropagation(); handleSeloClick(e, globalIdx, visualPos, div); });
+    div.appendChild(chk);
+
+    div.addEventListener('click', (e) => handleSeloClick(e, globalIdx, visualPos, div));
 
     const modelo = document.createElement('div');
     modelo.className = 'selo-modelo';
@@ -585,7 +750,9 @@
     btnDel.title = 'Remover selo';
     btnDel.addEventListener('click', (e) => {
       e.stopPropagation();
-      deletarSelo(globalIdx);
+      selecionados.delete(globalIdx);
+      atualizarBtnSel();
+      abrirMenuDeletar(e, globalIdx);
     });
     div.appendChild(btnDel);
 
@@ -607,6 +774,66 @@
     nomeArquivoEl.textContent = '';
     btnGerar.disabled = true;
   }
+  // ── Menu de opções ao deletar ─────────────────────────────────
+  let _idxPendente = -1;
+
+  function abrirMenuDeletar(e, globalIdx) {
+    _idxPendente = globalIdx;
+    const menu = document.getElementById('menu-deletar');
+    menu.style.display = 'block';
+    const rect = e.target.getBoundingClientRect();
+    const top  = rect.bottom + 6;
+    const left = Math.min(rect.left, window.innerWidth - 230);
+    menu.style.top  = top  + 'px';
+    menu.style.left = left + 'px';
+  }
+
+  function confirmarDeletar(tipo) {
+    document.getElementById('menu-deletar').style.display = 'none';
+    if (_idxPendente < -2) return;
+
+    if (_idxPendente === -2) {
+      // ── Exclusão múltipla ──────────────────────────────────────
+      const indices = Array.from(selecionados).sort((a, b) => a - b);
+      if (tipo === 'branco') {
+        const removidos = [];
+        for (const i of indices) {
+          if (selosAtivos[i] != null) { removidos.push(selosAtivos[i]); selosAtivos[i] = null; }
+        }
+        const numPag   = Math.ceil(selosAtivos.length / SELOS_POR_PAGINA) || 1;
+        const lastStart = (numPag - 1) * SELOS_POR_PAGINA;
+        selosAtivos.splice(lastStart, 0, ...removidos);
+      } else {
+        for (const i of indices.reverse()) selosAtivos.splice(i, 1);
+      }
+      selecionados.clear();
+    } else {
+      // ── Exclusão individual ────────────────────────────────────
+      const idx = _idxPendente;
+      if (tipo === 'branco') {
+        deletarSelo(idx);
+        _idxPendente = -1;
+        return;
+      } else {
+        selosAtivos.splice(idx, 1);
+      }
+    }
+
+    _idxPendente = -1;
+    const temSelos = selosAtivos.some(s => s != null);
+    if (!temSelos) { voltar(); return; }
+    renderizarSelos(selosAtivos);
+  }
+
+  document.addEventListener('click', () => {
+    const menu = document.getElementById('menu-deletar');
+    if (menu) menu.style.display = 'none';
+  });
 </script>
+
+<div class="menu-deletar" id="menu-deletar">
+  <button onclick="confirmarDeletar('branco')">Deixar em branco e jogar para o final</button>
+  <button onclick="confirmarDeletar('subir')">Subir tudo para preencher o espaço</button>
+</div>
 </body>
 </html>
